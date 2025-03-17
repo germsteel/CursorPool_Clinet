@@ -15,6 +15,7 @@ export default defineConfig(async () => ({
   json: {
     stringify: true
   },
+  assetsInclude: ['**/*.md'],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

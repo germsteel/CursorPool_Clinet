@@ -3,6 +3,10 @@ import { onMounted, ref, computed, watch } from 'vue'
 import { driver, Driver } from 'driver.js'
 import type { DriveStep, Side } from 'driver.js'
 import 'driver.js/dist/driver.css'
+import { useAppStore } from '@/stores'
+
+// 引入appStore
+const appStore = useAppStore()
 
 // 接收props
 const props = defineProps<{
@@ -212,9 +216,14 @@ const startTour = () => {
         closeBtn.setAttribute('style', `border-color: ${themeColors.value.borderColor} !important; color: ${themeColors.value.textColor} !important;`)
       }
     },
-    onDeselected: () => {
-      // 当用户关闭或完成引导时，记录状态
-      localStorage.setItem('dashboard_tour_shown', 'true')
+    onDeselected: async () => {
+      try {
+        // 设置引导状态为已完成
+        await appStore.completeTour()
+      } catch (error) {
+        console.error('保存引导状态失败:', error)
+      }
+      
       if (props.onComplete) {
         props.onComplete()
       }

@@ -1,7 +1,7 @@
+use crate::utils::{update_sqlite_db, AppPaths};
+use serde_json::json;
 use std::collections::HashMap;
 use std::fs;
-use serde_json::json;
-use crate::utils::{AppPaths, update_sqlite_db};
 
 #[derive(Debug)]
 pub struct AuthInfo {
@@ -23,14 +23,15 @@ pub fn update_auth(paths: &AppPaths, auth: &AuthInfo) -> Result<(), String> {
     fs::write(
         &paths.auth,
         serde_json::to_string_pretty(&auth_data).map_err(|e| format!("序列化JSON失败: {}", e))?,
-    ).map_err(|e| format!("写入auth.json失败: {}", e))?;
+    )
+    .map_err(|e| format!("写入auth.json失败: {}", e))?;
 
     // 更新数据库中的认证信息
     let mut auth_updates = HashMap::new();
     auth_updates.insert("cursorAuth/refreshToken".to_string(), auth.token.clone());
     auth_updates.insert("cursorAuth/accessToken".to_string(), auth.token.clone());
     auth_updates.insert("cursorAuth/cachedEmail".to_string(), auth.email.clone());
-    
+
     // 可选: 根据Cursor版本添加额外的字段
     auth_updates.insert("cursor.email".to_string(), auth.email.clone());
     auth_updates.insert("cursor.accessToken".to_string(), auth.token.clone());

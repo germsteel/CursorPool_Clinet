@@ -1,80 +1,100 @@
+use crate::api::client::ApiClient;
+use crate::database::Database;
+use crate::utils::file_utils::safe_write;
+use crate::utils::hook::Hook;
+use crate::utils::id_generator::generate_new_ids;
+use crate::utils::paths::AppPaths;
+use crate::utils::ErrorReporter;
+use crate::utils::ProcessManager;
+use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::fs;
-use rusqlite::Connection;
-use crate::utils::paths::AppPaths;
-use crate::utils::id_generator::generate_new_ids;
-use crate::utils::ProcessManager;
-use crate::utils::UpdateBlocker;
-use crate::utils::hook::Hook;
-use crate::utils::file_utils::safe_write;
-use std::path::PathBuf;
-use crate::utils::ErrorReporter;
-use crate::api::client::ApiClient;
 use tauri::State;
+use tracing::error;
 
+/// 终止 Cursor 进程
 #[tauri::command]
 pub async fn close_cursor() -> Result<bool, String> {
     let process_manager = ProcessManager::new();
-    
+
     // 检查Cursor是否在运行
     if !process_manager.is_cursor_running() {
         return Ok(false); // Cursor未运行，无需关闭
     }
-    
+
     // 关闭Cursor进程
-    process_manager.kill_cursor_processes()?;
-    
+    if let Err(e) = process_manager.kill_cursor_processes() {
+        error!(target: "cursor", "关闭Cursor进程失败: {}", e);
+        return Err(e);
+    }
+
     // 等待进程完全关闭
     let mut attempts = 0;
     while process_manager.is_cursor_running() && attempts < 10 {
         std::thread::sleep(std::time::Duration::from_millis(500));
         attempts += 1;
     }
-    
+
     // 检查是否成功关闭
     if process_manager.is_cursor_running() {
-        return Err("无法完全关闭Cursor进程".to_string());
+        let err_msg = "无法完全关闭Cursor进程".to_string();
+        error!(target: "cursor", "{}", err_msg);
+        return Err(err_msg);
     }
-    
+
     Ok(true)
 }
 
+/// 启动 Cursor 应用
 #[tauri::command]
 pub async fn launch_cursor() -> Result<bool, String> {
-    let paths = AppPaths::new()?;
-    
+    let paths = match AppPaths::new() {
+        Ok(p) => p,
+        Err(e) => {
+            error!(target: "cursor", "获取应用路径失败: {}", e);
+            return Err(e);
+        }
+    };
+
     // 启动Cursor
-    paths.launch_cursor()?;
-    
+    if let Err(e) = paths.launch_cursor() {
+        error!(target: "cursor", "启动Cursor失败: {}", e);
+        return Err(e);
+    }
+
     Ok(true)
 }
 
+/// 重置设备标识符
 #[tauri::command]
 pub async fn reset_machine_id(
     client: State<'_, ApiClient>,
     force_kill: bool,
-    machine_id: Option<String>
+    machine_id: Option<String>,
 ) -> Result<bool, String> {
     let process_manager = ProcessManager::new();
-    
+
     // 检查Cursor进程
     if !force_kill && process_manager.is_cursor_running() {
+        error!(target: "reset", "重置失败: Cursor进程正在运行且没有强制关闭选项");
         return Err("Cursor进程正在运行, 请先关闭Cursor".to_string());
     }
 
     // 如果force_kill为true, 则强制终止Cursor进程
     if force_kill {
         match process_manager.kill_cursor_processes() {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => {
                 // 上报错误
+                error!(target: "reset", "强制终止Cursor进程失败: {}", e);
                 ErrorReporter::report_error(
                     client.clone(),
                     "reset_machine_id",
                     &e,
                     None,
-                    Some("low".to_string())
-                ).await;
+                    Some("low".to_string()),
+                )
+                .await;
                 return Err(e);
             }
         }
@@ -84,17 +104,19 @@ pub async fn reset_machine_id(
         Ok(p) => p,
         Err(e) => {
             // 上报错误
+            error!(target: "reset", "获取应用路径失败: {}", e);
             ErrorReporter::report_error(
                 client.clone(),
                 "reset_machine_id",
                 &e,
                 None,
-                Some("low".to_string())
-            ).await;
+                Some("low".to_string()),
+            )
+            .await;
             return Err(e);
         }
     };
-    
+
     let new_ids = if let Some(id) = machine_id {
         // 生成随机 ID
         let mut ids = generate_new_ids();
@@ -112,40 +134,69 @@ pub async fn reset_machine_id(
             Ok(c) => c,
             Err(e) => {
                 let err = format!("读取 storage.json 失败: {}", e);
+                error!(target: "reset", "{}", err);
                 ErrorReporter::report_error(
                     client.clone(),
                     "reset_machine_id",
                     &err,
                     None,
-                    Some("low".to_string())
-                ).await;
+                    Some("low".to_string()),
+                )
+                .await;
                 return Err(err);
             }
         };
-        
+
         match serde_json::from_str(&content) {
             Ok(c) => c,
             Err(e) => {
                 let err = format!("解析 storage.json 失败: {}", e);
+                error!(target: "reset", "{}", err);
                 ErrorReporter::report_error(
                     client.clone(),
                     "reset_machine_id",
                     &err,
                     None,
-                    Some("low".to_string())
-                ).await;
+                    Some("low".to_string()),
+                )
+                .await;
                 return Err(err);
             }
         }
     } else {
+        error!(target: "reset", "storage.json不存在，将创建新文件");
         json!({})
     };
 
     if let Value::Object(ref mut map) = storage_content {
-        map.insert("telemetry.devDeviceId".to_string(), Value::String(new_ids.get("telemetry.devDeviceId").unwrap().clone()));
-        map.insert("telemetry.macMachineId".to_string(), Value::String(new_ids.get("telemetry.macMachineId").unwrap().clone()));
-        map.insert("telemetry.machineId".to_string(), Value::String(new_ids.get("telemetry.machineId").unwrap().clone()));
-        map.insert("telemetry.sqmId".to_string(), Value::String(new_ids.get("telemetry.sqmId").unwrap().clone()));
+        map.insert(
+            "telemetry.devDeviceId".to_string(),
+            Value::String(new_ids.get("telemetry.devDeviceId").unwrap().clone()),
+        );
+        map.insert(
+            "telemetry.macMachineId".to_string(),
+            Value::String(new_ids.get("telemetry.macMachineId").unwrap().clone()),
+        );
+        map.insert(
+            "telemetry.machineId".to_string(),
+            Value::String(new_ids.get("telemetry.machineId").unwrap().clone()),
+        );
+        map.insert(
+            "telemetry.sqmId".to_string(),
+            Value::String(new_ids.get("telemetry.sqmId").unwrap().clone()),
+        );
+    } else {
+        let err = "storage.json格式错误，不是有效的JSON对象".to_string();
+        error!(target: "reset", "{}", err);
+        ErrorReporter::report_error(
+            client.clone(),
+            "reset_machine_id",
+            &err,
+            None,
+            Some("low".to_string()),
+        )
+        .await;
+        return Err(err);
     }
 
     // 使用 safe_write 代替 fs::write
@@ -153,26 +204,30 @@ pub async fn reset_machine_id(
         Ok(s) => s,
         Err(e) => {
             let err = format!("序列化 storage.json 失败: {}", e);
+            error!(target: "reset", "{}", err);
             ErrorReporter::report_error(
                 client.clone(),
                 "reset_machine_id",
                 &err,
                 None,
-                Some("low".to_string())
-            ).await;
+                Some("low".to_string()),
+            )
+            .await;
             return Err(err);
         }
     };
-    
+
     if let Err(e) = safe_write(&paths.storage, &storage_content_str) {
         let err = format!("写入 storage.json 失败: {}", e);
+        error!(target: "reset", "{}", err);
         ErrorReporter::report_error(
             client.clone(),
             "reset_machine_id",
             &err,
             None,
-            Some("low".to_string())
-        ).await;
+            Some("low".to_string()),
+        )
+        .await;
         return Err(err);
     }
 
@@ -182,61 +237,251 @@ pub async fn reset_machine_id(
             ("device_id", new_ids.get("telemetry.devDeviceId").unwrap()),
             ("mac_id", new_ids.get("telemetry.macMachineId").unwrap()),
             ("machineId", new_ids.get("telemetry.machineId").unwrap()),
-            ("sqm_id", new_ids.get("telemetry.sqmId").unwrap())
+            ("sqm_id", new_ids.get("telemetry.sqmId").unwrap()),
         ];
-        
+
         if let Err(e) = update_database(&paths.db, &updates) {
+            error!(target: "reset", "更新数据库失败: {}", e);
             ErrorReporter::report_error(
                 client.clone(),
                 "reset_machine_id",
                 &e,
                 None,
-                Some("low".to_string())
-            ).await;
+                Some("low".to_string()),
+            )
+            .await;
             return Err(e);
         }
+        error!(target: "reset", "成功更新数据库中的设备ID信息");
+    } else {
+        error!(target: "reset", "数据库文件不存在，跳过数据库更新");
     }
 
-    // 移除自动启动Cursor的代码
+    error!(target: "reset", "设备标识符重置完成");
     Ok(true)
 }
 
+/// 切换用户账号
 #[tauri::command]
 pub async fn switch_account(
     email: String,
     token: String,
-    force_kill: bool
+    force_kill: bool,
+    db: tauri::State<'_, crate::database::Database>,
 ) -> Result<bool, String> {
+    error!(target: "account", "开始切换账号到: {}", email);
     let process_manager = ProcessManager::new();
-    
+
     // 检查Cursor进程
     if !force_kill && process_manager.is_cursor_running() {
+        error!(target: "account", "切换账号失败: Cursor进程正在运行且没有强制关闭选项");
         return Err("Cursor进程正在运行, 请先关闭Cursor".to_string());
     }
 
     // 如果force_kill为true, 则强制终止Cursor进程
     if force_kill {
-        process_manager.kill_cursor_processes()?;
+        if let Err(e) = process_manager.kill_cursor_processes() {
+            error!(target: "account", "强制终止Cursor进程失败: {}", e);
+            return Err(e);
+        }
+        error!(target: "account", "已强制终止Cursor进程");
     }
 
-    let paths = AppPaths::new()?;
+    let paths = match AppPaths::new() {
+        Ok(p) => p,
+        Err(e) => {
+            error!(target: "account", "获取应用路径失败: {}", e);
+            return Err(e);
+        }
+    };
+    
+    // 获取当前账户信息
+    let mut current_email = String::new();
+    let mut current_token = String::new();
+    let mut machine_id = String::new();
+    
+    if paths.db.exists() {
+        if let Ok(conn) = Connection::open(&paths.db) {
+            // 读取当前机器码
+            if let Ok(mut stmt) = conn.prepare("SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId'") {
+                if let Ok(mut rows) = stmt.query([]) {
+                    if let Ok(Some(row)) = rows.next() {
+                        if let Ok(device_id) = row.get::<_, String>(0) {
+                            machine_id = device_id;
+                        }
+                    }
+                }
+            }
+            
+            // 读取当前邮箱
+            if let Ok(mut stmt) = conn.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/cachedEmail'") {
+                if let Ok(mut rows) = stmt.query([]) {
+                    if let Ok(Some(row)) = rows.next() {
+                        if let Ok(email) = row.get::<_, String>(0) {
+                            current_email = email;
+                        }
+                    }
+                }
+            }
+            
+            // 读取当前token
+            if let Ok(mut stmt) = conn.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/refreshToken'") {
+                if let Ok(mut rows) = stmt.query([]) {
+                    if let Ok(Some(row)) = rows.next() {
+                        if let Ok(token) = row.get::<_, String>(0) {
+                            current_token = token;
+                        }
+                    }
+                }
+            }
+        } else {
+            error!(target: "account", "打开数据库失败");
+        }
+    } else {
+        error!(target: "account", "数据库文件不存在");
+    }
+    
+    // 检查当前账户是否已在历史记录中
+    let account_exists_in_history = if !current_email.is_empty() {
+        match db.get_item("user.history.accounts") {
+            Ok(Some(data)) => {
+                match serde_json::from_str::<Vec<crate::api::types::HistoryAccountRecord>>(&data) {
+                    Ok(accounts) => accounts.iter().any(|a| a.email == current_email),
+                    Err(e) => {
+                        error!(target: "account", "解析历史账户记录失败: {}", e);
+                        false
+                    }
+                }
+            },
+            Ok(None) => {
+                error!(target: "account", "历史账户记录为空");
+                false
+            },
+            Err(e) => {
+                error!(target: "account", "获取历史账户记录失败: {}", e);
+                false
+            }
+        }
+    } else {
+        false
+    };
+    
+    // 如果当前有账户信息且不在历史记录中，才保存
+    if !current_email.is_empty() && !current_token.is_empty() && !machine_id.is_empty() && !account_exists_in_history {
+        if let Err(e) = crate::api::interceptor::save_cursor_token_to_history(
+            &db, &current_email, &current_token, &machine_id
+        ).await {
+            error!(target: "account", "保存当前Cursor账户到历史记录失败: {}", e);
+        } else {
+            error!(target: "account", "成功保存当前账户 {} 到历史记录", current_email);
+        }
+    }
 
+    // 处理token，分割并只取第二部分
+    let processed_token = if token.contains("%3A%3A") {
+        token.split("%3A%3A").nth(1).unwrap_or(&token).to_string()
+    } else {
+        token.clone()
+    };
+
+    // 更新数据库为-新账户
     let account_updates = vec![
         ("cursor.email", email.clone()),
-        ("cursor.accessToken", token.clone()),
-        ("cursorAuth/refreshToken", token.clone()),
-        ("cursorAuth/accessToken", token.clone()),
-        ("cursorAuth/cachedEmail", email),
+        ("cursor.accessToken", processed_token.clone()),
+        ("cursorAuth/refreshToken", processed_token.clone()),
+        ("cursorAuth/accessToken", processed_token.clone()),
+        ("cursorAuth/cachedEmail", email.clone()),
     ];
 
-    update_database(&paths.db, &account_updates)?;
+    if let Err(e) = update_database(&paths.db, &account_updates) {
+        error!(target: "account", "更新数据库失败: {}", e);
+        return Err(e);
+    }
+    error!(target: "account", "成功更新数据库中的账户信息");
+
+    // 获取机器码（为了新账户使用）
+    let result = match get_machine_ids() {
+        Ok(r) => r,
+        Err(e) => {
+            error!(target: "account", "获取机器码失败: {}", e);
+            return Err(e);
+        }
+    };
+    let machine_id = result["machineId"].as_str().unwrap_or_default().to_string();
+
+    // ### 检查新账户是否需要保存 ###
+    let new_account_exists_in_history = match db.get_item("user.history.accounts") {
+        Ok(Some(data)) => {
+            match serde_json::from_str::<Vec<crate::api::types::HistoryAccountRecord>>(&data) {
+                Ok(accounts) => accounts.iter().any(|a| a.email == email),
+                Err(e) => {
+                    error!(target: "account", "解析历史账户记录失败: {}", e);
+                    false
+                }
+            }
+        },
+        Ok(None) => {
+            error!(target: "account", "历史账户记录为空");
+            false
+        },
+        Err(e) => {
+            error!(target: "account", "获取历史账户记录失败: {}", e);
+            false
+        }
+    };
+    
+    // 如果新账户不在历史记录中，才添加
+    if !new_account_exists_in_history {
+        if let Err(e) = crate::api::interceptor::save_cursor_token_to_history(
+            &db, &email, &processed_token, &machine_id
+        ).await {
+            error!(target: "account", "保存新Cursor账户到历史记录失败: {}", e);
+        } else {
+            error!(target: "account", "成功保存新账户 {} 到历史记录", email);
+        }
+    } else {
+        // 如果账户已存在但token可能更新了，更新历史记录
+        if let Ok(Some(data)) = db.get_item("user.history.accounts") {
+            if let Ok(mut accounts) = serde_json::from_str::<Vec<crate::api::types::HistoryAccountRecord>>(&data) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+                
+                // 查找并更新已有账户
+                for account in &mut accounts {
+                    if account.email == email {
+                        // 更新token和最后使用时间
+                        account.token = processed_token.clone();  // 使用处理后的token
+                        account.last_used = now;
+                        break;
+                    }
+                }
+                
+                // 保存更新后的记录
+                if let Ok(json_data) = serde_json::to_string(&accounts) {
+                    if let Err(e) = db.set_item("user.history.accounts", &json_data) {
+                        error!(target: "account", "更新历史账户记录失败: {}", e);
+                    } else {
+                        error!(target: "account", "成功更新账户 {} 的历史记录", email);
+                    }
+                } else {
+                    error!(target: "account", "序列化历史账户记录失败");
+                }
+            } else {
+                error!(target: "account", "解析历史账户记录失败");
+            }
+        }
+    }
 
     // 等待一段时间确保数据库更新完成
     std::thread::sleep(std::time::Duration::from_millis(500));
 
+    error!(target: "account", "成功切换到账号: {}", email);
     Ok(true)
 }
 
+/// 获取设备标识符和当前账号信息
 #[tauri::command]
 pub fn get_machine_ids() -> Result<Value, String> {
     let paths = AppPaths::new()?;
@@ -249,7 +494,9 @@ pub fn get_machine_ids() -> Result<Value, String> {
     if paths.db.exists() {
         if let Ok(conn) = Connection::open(&paths.db) {
             // 读取机器码
-            if let Ok(mut stmt) = conn.prepare("SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId'") {
+            if let Ok(mut stmt) =
+                conn.prepare("SELECT value FROM ItemTable WHERE key = 'telemetry.devDeviceId'")
+            {
                 if let Ok(mut rows) = stmt.query([]) {
                     if let Ok(Some(row)) = rows.next() {
                         if let Ok(device_id) = row.get::<_, String>(0) {
@@ -260,7 +507,9 @@ pub fn get_machine_ids() -> Result<Value, String> {
             }
 
             // 读取 Cursor 邮箱
-            if let Ok(mut stmt) = conn.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/cachedEmail'") {
+            if let Ok(mut stmt) =
+                conn.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/cachedEmail'")
+            {
                 if let Ok(mut rows) = stmt.query([]) {
                     if let Ok(Some(row)) = rows.next() {
                         if let Ok(email) = row.get::<_, String>(0) {
@@ -271,7 +520,9 @@ pub fn get_machine_ids() -> Result<Value, String> {
             }
 
             // 读取cursor token
-            if let Ok(mut stmt) = conn.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/refreshToken'") {
+            if let Ok(mut stmt) =
+                conn.prepare("SELECT value FROM ItemTable WHERE key = 'cursorAuth/refreshToken'")
+            {
                 if let Ok(mut rows) = stmt.query([]) {
                     if let Ok(Some(row)) = rows.next() {
                         if let Ok(token) = row.get::<_, String>(0) {
@@ -286,107 +537,40 @@ pub fn get_machine_ids() -> Result<Value, String> {
     Ok(result)
 }
 
+/// 检查 Cursor 进程状态
 #[tauri::command]
 pub fn check_cursor_running() -> Result<bool, String> {
     let process_manager = ProcessManager::new();
     Ok(process_manager.is_cursor_running())
 }
 
+/// 检查管理员权限
 #[tauri::command]
 pub fn check_admin_privileges() -> Result<bool, String> {
     crate::utils::check_admin_privileges()
 }
 
+/// 请求管理员权限
 #[tauri::command]
 pub fn request_admin_privileges(exe_path: String) -> Result<bool, String> {
     crate::utils::privileges::request_admin_privileges(&exe_path)
 }
 
-/// 禁用 Cursor 自动更新
-#[tauri::command]
-pub async fn disable_cursor_update(force_kill: bool) -> Result<(), String> {
-    let process_manager = ProcessManager::new();
+/// 更新数据库键值对
+fn update_database(
+    db_path: &std::path::Path,
+    updates: &[(impl AsRef<str>, impl AsRef<str>)],
+) -> Result<(), String> {
+    error!(target: "database", "开始更新数据库: {}", db_path.display());
     
-    // 检查 Cursor 进程
-    if !force_kill && process_manager.is_cursor_running() {
-        return Err("Cursor进程正在运行, 请先关闭Cursor".to_string());
-    }
-
-    // 如果 force_kill 为 true, 则强制终止 Cursor 进程
-    if force_kill {
-        process_manager.kill_cursor_processes()?;
-    }
-
-    let paths = AppPaths::new()?;
-    let blocker = UpdateBlocker::new();
-    
-    match blocker.disable_auto_update(&paths.cursor_updater) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("禁用自动更新失败: {}", e))
-    }
-}
-
-/// 恢复 Cursor 自动更新
-#[tauri::command]
-pub async fn restore_cursor_update(force_kill: bool) -> Result<(), String> {
-    let process_manager = ProcessManager::new();
-    
-    // 检查 Cursor 进程
-    if !force_kill && process_manager.is_cursor_running() {
-        return Err("Cursor进程正在运行, 请先关闭Cursor".to_string());
-    }
-
-    // 如果 force_kill 为 true, 则强制终止 Cursor 进程
-    if force_kill {
-        process_manager.kill_cursor_processes()?;
-    }
-
-    let paths = AppPaths::new()?;
-    let blocker = UpdateBlocker::new();
-    
-    match blocker.restore_auto_update(&paths.cursor_updater) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("恢复自动更新失败: {}", e))
-    }
-}
-
-/// 检查 Cursor 是否被禁止更新
-#[tauri::command]
-pub fn check_update_disabled() -> Result<bool, String> {
-    let paths = AppPaths::new()?;
-    
-    match std::env::consts::OS {
-        "macos" => {
-            // macOS 下检查 app-update.yml 文件状态和 main.js.backup 是否存在
-            let app_update_path = PathBuf::from("/Applications/Cursor.app/Contents/Resources/app-update.yml");
-            let main_js_backup = paths.main_js.with_extension("js.backup");
-            
-            if !app_update_path.exists() {
-                return Ok(false);
-            }
-
-            // 检查 app-update.yml 是否为只读
-            let is_readonly = crate::utils::file_utils::is_read_only(&app_update_path)
-                .map_err(|e| format!("检查文件权限失败: {}", e))?;
-
-            // 同时检查备份文件是否存在和文件是否只读
-            Ok(is_readonly && main_js_backup.exists())
-        },
-        "windows" | "linux" => {
-            // Windows 和 Linux 下检查更新器路径
-            if !paths.cursor_updater.exists() {
-                return Ok(false);
-            }
-            // 如果是文件而不是目录, 说明已被禁用
-            Ok(!paths.cursor_updater.is_dir())
-        },
-        _ => Err("不支持的操作系统".to_string()),
-    }
-}
-
-fn update_database(db_path: &std::path::Path, updates: &[(impl AsRef<str>, impl AsRef<str>)]) -> Result<(), String> {
-    let conn = Connection::open(db_path)
-        .map_err(|e| format!("打开数据库失败: {}", e))?;
+    let conn = match Connection::open(db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            let err_msg = format!("打开数据库失败: {}", e);
+            error!(target: "database", "{}", err_msg);
+            return Err(err_msg);
+        }
+    };
 
     for (key, value) in updates {
         let key = match key.as_ref() {
@@ -397,127 +581,220 @@ fn update_database(db_path: &std::path::Path, updates: &[(impl AsRef<str>, impl 
             _ => key.as_ref(),
         };
 
+        error!(target: "database", "更新数据库键值对: {} => {}", key, value.as_ref());
+
         // 先尝试更新已存在的记录
         let result = conn.execute(
             "UPDATE ItemTable SET value = ?1 WHERE key = ?2",
-            [value.as_ref(), key]
+            [value.as_ref(), key],
         );
 
         // 如果记录不存在（没有更新任何行）, 则插入新记录
         if let Ok(0) = result {
-            conn.execute(
+            error!(target: "database", "键 {} 不存在，将插入新记录", key);
+            if let Err(e) = conn.execute(
                 "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
-                [key, value.as_ref()]
-            ).map_err(|e| format!("插入数据失败: {}", e))?;
-        } else {
-            result.map_err(|e| format!("更新数据失败: {}", e))?;
+                [key, value.as_ref()],
+            ) {
+                let err_msg = format!("插入数据失败: {}", e);
+                error!(target: "database", "{}", err_msg);
+                return Err(err_msg);
+            }
+        } else if let Err(e) = result {
+            let err_msg = format!("更新数据失败: {}", e);
+            error!(target: "database", "{}", err_msg);
+            return Err(err_msg);
         }
     }
 
+    error!(target: "database", "数据库更新完成");
     Ok(())
 }
 
-/// 检查 main.js 是否已被 hook
+/// 检查 main.js 注入状态
 #[tauri::command]
-pub async fn is_hook() -> Result<bool, String> {
-    let paths = AppPaths::new()?;
-    let content = fs::read_to_string(&paths.main_js)
-        .map_err(|e| format!("读取 main.js 失败: {}", e))?;
+pub async fn is_hook(db: State<'_, Database>) -> Result<bool, String> {
+    let paths = match AppPaths::new_with_db(Some(&db)) {
+        Ok(p) => p,
+        Err(e) => {
+            error!(target: "hook", "获取应用路径失败: {}", e);
+            return Err(e);
+        }
+    };
+    
+    let content = match fs::read_to_string(&paths.main_js) {
+        Ok(c) => c,
+        Err(e) => {
+            let err_msg = format!("读取 main.js 失败: {}", e);
+            error!(target: "hook", "{}", err_msg);
+            return Err(err_msg);
+        }
+    };
 
     // 检查正则匹配
     let machine_id_matches = Hook::machine_id_regex().find_iter(&content).count();
     let mac_machine_id_matches = Hook::mac_machine_id_regex().find_iter(&content).count();
 
-    // 如果找不到匹配, 说明已经被 hook 了
+    // 如果找不到匹配，说明已经被 hook 了
     if machine_id_matches == 0 || mac_machine_id_matches == 0 {
         return Ok(true);
     }
 
-    // 从远程获取所有可能的行数
-    let line_counts = Hook::get_all_line_counts_with_remote().await?;
-    
-    for &count in &line_counts {
-        let hash = Hook::calculate_md5_without_last_lines(&content, count);
-        if Hook::main_js_md5().contains_key(hash.as_str()) {
-            return Ok(false);
-        }
-    }
-    
-    // 如果没有匹配的哈希，说明版本不兼容
     Ok(false)
 }
 
-/// Hook main.js 文件
+/// 注入 main.js 文件
 #[tauri::command]
 pub async fn hook_main_js(
     client: State<'_, ApiClient>,
-    force_kill: bool
+    db: State<'_, Database>,
+    force_kill: bool,
 ) -> Result<(), String> {
     let process_manager = ProcessManager::new();
-    
+
     // 检查 Cursor 进程
     if !force_kill && process_manager.is_cursor_running() {
+        error!(target: "hook", "注入失败: Cursor进程正在运行且没有强制关闭选项");
         return Err("Cursor进程正在运行, 请先关闭Cursor".to_string());
     }
 
     // 如果 force_kill 为 true, 则强制终止 Cursor 进程
     if force_kill {
         match process_manager.kill_cursor_processes() {
-            Ok(_) => {},
+            Ok(_) => {
+                error!(target: "hook", "已强制终止Cursor进程");
+            }
             Err(e) => {
                 // 上报错误
+                error!(target: "hook", "强制终止Cursor进程失败: {}", e);
                 ErrorReporter::report_error(
                     client.clone(),
                     "hook_main_js",
                     &e,
                     None,
-                    Some("medium".to_string())
-                ).await;
+                    Some("medium".to_string()),
+                )
+                .await;
                 return Err(e);
             }
         }
     }
 
-    // 执行 hook 操作，传递 client 用于错误上报
-    Hook::update_main_js_content(Some(client)).await
+    // 执行 hook 操作，传递 client 和 db 用于错误上报和路径保存
+    error!(target: "hook", "开始注入main.js文件");
+    let result = Hook::update_main_js_content(Some(client), Some(db)).await;
+    if result.is_ok() {
+        error!(target: "hook", "成功注入main.js文件");
+    }
+    result
 }
 
-/// 从备份恢复 main.js 文件
+/// 恢复 main.js 原始内容
 #[tauri::command]
 pub async fn restore_hook(
     client: State<'_, ApiClient>,
-    force_kill: bool
+    db: State<'_, Database>,
+    force_kill: bool,
 ) -> Result<(), String> {
     let process_manager = ProcessManager::new();
-    
+
     // 检查 Cursor 进程
     if !force_kill && process_manager.is_cursor_running() {
+        error!(target: "hook", "恢复失败: Cursor进程正在运行且没有强制关闭选项");
         return Err("Cursor进程正在运行, 请先关闭Cursor".to_string());
     }
 
     // 如果 force_kill 为 true, 则强制终止 Cursor 进程
     if force_kill {
         match process_manager.kill_cursor_processes() {
-            Ok(_) => {},
+            Ok(_) => {
+                error!(target: "hook", "已强制终止Cursor进程");
+            }
             Err(e) => {
                 // 上报错误
+                error!(target: "hook", "强制终止Cursor进程失败: {}", e);
                 ErrorReporter::report_error(
                     client.clone(),
                     "restore_hook",
                     &e,
                     None,
-                    Some("medium".to_string())
-                ).await;
+                    Some("medium".to_string()),
+                )
+                .await;
                 return Err(e);
             }
         }
     }
 
-    // 执行恢复操作，传递 client 用于错误上报
-    Hook::restore_from_backup(Some(client)).await
+    // 执行恢复操作，传递 client 和 db 用于错误上报和路径获取
+    error!(target: "hook", "开始恢复main.js文件");
+    let result = Hook::restore_from_backup(Some(client), Some(db)).await;
+    if result.is_ok() {
+        error!(target: "hook", "成功恢复main.js文件");
+    }
+    result
 }
 
+/// 检查操作系统是否为 Windows
 #[tauri::command]
 pub fn check_is_windows() -> bool {
     crate::utils::privileges::is_windows()
+}
+
+/// 查找并验证用户选择的 Cursor 路径
+#[tauri::command]
+pub async fn find_cursor_path(
+    client: State<'_, ApiClient>,
+    db: State<'_, Database>,
+    selected_path: String,
+) -> Result<bool, String> {
+    error!(target: "path", "正在查找Cursor路径: {}", selected_path);
+
+    // 尝试从选择的路径找到main.js
+    let main_js_path = match AppPaths::find_main_js_from_selected_path(&selected_path) {
+        Ok(path) => {
+            error!(target: "path", "找到main.js路径: {}", path.display());
+            path
+        }
+        Err(e) => {
+            error!(target: "path", "从选择的路径查找main.js失败: {}", e);
+            ErrorReporter::report_error(
+                client.clone(),
+                "find_cursor_path",
+                &e,
+                None,
+                Some("low".to_string()),
+            )
+            .await;
+            return Err(e);
+        }
+    };
+
+    // 验证找到的文件确实是main.js
+    if !main_js_path.exists()
+        || main_js_path
+            .file_name()
+            .map_or(false, |name| name != "main.js")
+    {
+        let err_msg = "选择的路径不包含有效的main.js文件".to_string();
+        error!(target: "path", "{}", err_msg);
+        return Err(err_msg);
+    }
+
+    // 保存路径到数据库
+    if let Err(e) = AppPaths::save_path_to_db(&db, &main_js_path) {
+        error!(target: "path", "保存路径到数据库失败: {}", e);
+        ErrorReporter::report_error(
+            client.clone(),
+            "find_cursor_path",
+            &e,
+            None,
+            Some("low".to_string()),
+        )
+        .await;
+        return Err(e);
+    }
+
+    error!(target: "path", "成功验证并保存Cursor路径");
+    Ok(true)
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { 
   NCard, 
   NSpace, 
@@ -8,30 +8,31 @@ import {
   NInput, 
   NButton,
   NInputGroup,
-  NModal,
-  useMessage
+  useMessage,
+  NSpin
 } from 'naive-ui'
-import { useRouter } from 'vue-router'
 import { useI18n } from '../locales'
 import { messages } from '../locales/messages'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
+import InboundSelector from '../components/InboundSelector.vue'
+import CursorRunningModal from '../components/CursorRunningModal.vue'
 import { 
   changePassword, 
   activate, 
   checkCursorRunning,
-  disableCursorUpdate,
-  restoreCursorUpdate,
-  checkUpdateDisabled,
-  checkHookStatus,
   applyHook,
-  restoreHook
+  restoreHook,
 } from '@/api'
 import { addHistoryRecord } from '../utils/history'
 import { version } from '../../package.json'
+import { useUserStore } from '../stores/user'
+import { useCursorStore } from '../stores'
+import FileSelectModal from '../components/FileSelectModal.vue'
 
-const router = useRouter()
 const message = useMessage()
 const { currentLang, i18n } = useI18n()
+const userStore = useUserStore()
+const cursorStore = useCursorStore()
 
 interface SettingsForm {
   activationCode: string
@@ -49,18 +50,16 @@ const formValue = ref<SettingsForm>({
 
 // 修改控制状态
 const controlStatus = ref({
-  updateDisabled: false,
-  isHooked: false
+  isHooked: false,
+  isChecking: false
 })
 
 // 为每个操作添加单独的加载状态
-const disableUpdateLoading = ref(false)
-const restoreUpdateLoading = ref(false)
 const applyHookLoading = ref(false)
 const restoreHookLoading = ref(false)
 
 const showControlRunningModal = ref(false)
-const pendingControlAction = ref<'disableUpdate' | 'restoreUpdate' | 'applyHook' | 'restoreHook' | null>(null)
+const pendingControlAction = ref<'applyHook' | 'restoreHook' | null>(null)
 
 // 为激活和修改密码添加独立的加载状态
 const activateLoading = ref(false)
@@ -68,90 +67,70 @@ const passwordChangeLoading = ref(false)
 
 const handleActivate = async () => {
   if (!formValue.value.activationCode) {
-    message.warning(messages[currentLang.value].message.pleaseInputActivationCode)
+    message.error('请输入激活码')
     return
   }
-
+  
   activateLoading.value = true
   try {
-    const apiKey = localStorage.getItem('apiKey')
-    if (!apiKey) {
-      throw new Error('未找到 API Key')
-    }
-
-    await activate(apiKey, formValue.value.activationCode)
-    message.success(messages[currentLang.value].message.activationSuccess)
+    await activate(formValue.value.activationCode)
+    message.success('激活成功')
     addHistoryRecord(
       '激活码兑换',
       '成功兑换激活码'
     )
     formValue.value.activationCode = ''
   } catch (error) {
-    console.error('激活失败:', error)
-    message.error(messages[currentLang.value].message.activationFailed)
+    message.error(error instanceof Error ? error.message : '激活失败')
   } finally {
     activateLoading.value = false
   }
 }
 
-const handlePasswordChange = async () => {
+const handleChangePassword = async () => {
   if (!formValue.value.currentPassword || !formValue.value.newPassword || !formValue.value.confirmPassword) {
-    message.warning(messages[currentLang.value].message.pleaseInputPassword)
+    message.error('请填写完整密码信息')
     return
   }
+  
   if (formValue.value.newPassword !== formValue.value.confirmPassword) {
-    message.error(messages[currentLang.value].message.passwordNotMatch)
+    message.error('两次输入的新密码不一致')
     return
   }
-
+  
   passwordChangeLoading.value = true
   try {
-    const apiKey = localStorage.getItem('apiKey')
-    if (!apiKey) {
-      throw new Error('未找到 API Key')
-    }
-
-    await changePassword(apiKey, formValue.value.currentPassword, formValue.value.newPassword)
-    message.success(messages[currentLang.value].message.passwordChangeSuccess)
-    addHistoryRecord(
-      '密码修改',
-      '成功修改密码'
+    await changePassword(
+      formValue.value.currentPassword,
+      formValue.value.newPassword
     )
+    message.success('密码修改成功')
+    
     formValue.value.currentPassword = ''
     formValue.value.newPassword = ''
     formValue.value.confirmPassword = ''
     
     await handleLogout()
   } catch (error) {
-    message.error(messages[currentLang.value].message.passwordChangeFailed)
+    message.error(error instanceof Error ? error.message : '密码修改失败')
   } finally {
     passwordChangeLoading.value = false
   }
 }
 
 const handleLogout = async () => {
-  localStorage.removeItem('apiKey')
-  await router.push('/dashboard')
-  window.dispatchEvent(new CustomEvent('refresh_dashboard_data'))
-  window.location.reload()
-}
-
-// 检查控制状态
-const checkControlStatus = async () => {
   try {
-    controlStatus.value.updateDisabled = await checkUpdateDisabled()
-    controlStatus.value.isHooked = await checkHookStatus()
+    await userStore.logout()
+    addHistoryRecord('用户操作', '用户登出')
   } catch (error) {
-    console.error('检查控制状态失败:', error)
+    message.error('登出失败')
   }
 }
 
 // 修改 handleControlAction 函数
-const handleControlAction = async (action: 'disableUpdate' | 'restoreUpdate' | 'applyHook' | 'restoreHook', force_kill: boolean = false) => {
+const handleControlAction = async (action: 'applyHook' | 'restoreHook', force_kill: boolean = false) => {
   // 根据操作设置对应的加载状态
   const loadingRef = {
-    'disableUpdate': disableUpdateLoading,
-    'restoreUpdate': restoreUpdateLoading,
     'applyHook': applyHookLoading,
     'restoreHook': restoreHookLoading
   }[action]
@@ -167,43 +146,70 @@ const handleControlAction = async (action: 'disableUpdate' | 'restoreUpdate' | '
       }
     }
 
-    let successMessage = ''
-    let historyAction = ''
-    
-    switch (action) {
-      case 'disableUpdate':
-        await disableCursorUpdate(force_kill)
-        successMessage = messages[currentLang.value].systemControl.messages.disableUpdateSuccess
-        historyAction = messages[currentLang.value].systemControl.history.disableUpdate
-        controlStatus.value.updateDisabled = true
-        break
-      case 'restoreUpdate':
-        await restoreCursorUpdate(force_kill)
-        successMessage = messages[currentLang.value].systemControl.messages.restoreUpdateSuccess
-        historyAction = messages[currentLang.value].systemControl.history.restoreUpdate
-        controlStatus.value.updateDisabled = false
-        break
-      case 'applyHook':
-        await applyHook(force_kill)
-        successMessage = messages[currentLang.value].systemControl.messages.applyHookSuccess
-        historyAction = messages[currentLang.value].systemControl.history.applyHook
-        controlStatus.value.isHooked = true
-        break
-      case 'restoreHook':
-        await restoreHook(force_kill)
-        successMessage = messages[currentLang.value].systemControl.messages.restoreHookSuccess
-        historyAction = messages[currentLang.value].systemControl.history.restoreHook
-        controlStatus.value.isHooked = false
-        break
-    }
+    try {
+      let successMessage = ''
+      let historyAction = ''
+      
+      switch (action) {
+        case 'applyHook':
+          await applyHook(force_kill)
+          successMessage = messages[currentLang.value].systemControl.messages.applyHookSuccess
+          historyAction = messages[currentLang.value].systemControl.history.applyHook
+          controlStatus.value.isHooked = true
+          break
+        case 'restoreHook':
+          await restoreHook(force_kill)
+          successMessage = messages[currentLang.value].systemControl.messages.restoreHookSuccess
+          historyAction = messages[currentLang.value].systemControl.history.restoreHook
+          controlStatus.value.isHooked = false
+          break
+      }
 
-    message.success(successMessage)
-    showControlRunningModal.value = false
-    addHistoryRecord('系统控制', historyAction)
+      message.success(successMessage)
+      showControlRunningModal.value = false
+      addHistoryRecord('系统控制', historyAction)
+      
+      // 操作完成后重新检查状态
+      await checkControlStatus()
+    } catch (error) {
+      // 获取完整的错误信息
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      
+      // 检查是否包含MAIN_JS_NOT_FOUND
+      if (errorMsg.includes('MAIN_JS_NOT_FOUND')) {
+        cursorStore.setPendingAction(action, { forceKill: force_kill })
+        return
+      }
+      throw error
+    }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : '操作失败')
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('控制操作错误:', errorMsg)
+    message.error(errorMsg)
   } finally {
     loadingRef.value = false
+  }
+}
+
+// 检查控制状态
+const checkControlStatus = async () => {
+  try {
+    // 添加loading状态
+    controlStatus.value.isChecking = true
+    
+    // 使用cursorStore的checkHook方法，保持状态同步
+    const hookResult = await cursorStore.checkHook()
+    // 处理可能为null的情况
+    controlStatus.value.isHooked = hookResult === true
+    
+    // 确保UI反映最新状态
+    await nextTick()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    console.error('检查控制状态失败:', errorMsg)
+  } finally {
+    // 完成检查，移除loading状态
+    controlStatus.value.isChecking = false
   }
 }
 
@@ -214,171 +220,203 @@ const handleControlForceKill = async () => {
   }
 }
 
+// 监听cursorStore的hookStatus变化
+watch(() => cursorStore.hookStatus, (newStatus) => {
+  if (newStatus !== null) {
+    controlStatus.value.isHooked = newStatus
+  }
+}, { immediate: true })
+
+// 监听文件选择模态框的显示状态
+watch(() => cursorStore.showSelectFileModal, (newValue, oldValue) => {
+  if (oldValue && !newValue) {
+    checkControlStatus()
+  }
+})
+
 // 在组件挂载时检查控制状态
 onMounted(async () => {
+  // 初始化状态
+  controlStatus.value = {
+    isHooked: cursorStore.hookStatus ?? false,
+    isChecking: false
+  }
+  
+  // 检查Hook状态
   await checkControlStatus()
 })
 </script>
 
 <template>
   <n-space vertical :size="24">
-    <n-card :title="i18n.systemControl.title">
-      <n-space vertical>
+    <!-- 系统设置卡片 -->
+    <n-card :title="i18n.systemControl ? i18n.systemControl.title : '系统设置'">
+      <n-space vertical :size="16">
         <!-- Hook 控制部分 -->
-        <n-space justify="space-between" align="center">
-          <span>{{ i18n.systemControl.hookStatus }}: {{ controlStatus.isHooked ? i18n.systemControl.hookApplied : i18n.systemControl.hookNotApplied }}</span>
-          <n-space>
-            <n-button 
-              type="warning" 
-              :loading="applyHookLoading"
-              :disabled="controlStatus.isHooked"
-              @click="handleControlAction('applyHook')"
-              style="width: 120px"
-            >
-              {{ i18n.systemControl.applyHook }}
-            </n-button>
-            <n-button 
-              type="primary"
-              :loading="restoreHookLoading"
-              :disabled="!controlStatus.isHooked"
-              @click="handleControlAction('restoreHook')"
-              style="width: 120px"
-            >
-              {{ i18n.systemControl.restoreHook }}
-            </n-button>
+        <div>
+          <div class="section-header">{{ i18n.systemControl.hookStatus }}</div>
+          <n-space justify="space-between" align="center">
+            <span>
+              <template v-if="controlStatus.isChecking">
+                <n-spin size="small" />
+              </template>
+              <template v-else>
+                {{ controlStatus.isHooked ? i18n.systemControl.hookApplied : i18n.systemControl.hookNotApplied }}
+              </template>
+            </span>
+            <n-space>
+              <n-button 
+                type="warning" 
+                :loading="applyHookLoading || controlStatus.isChecking"
+                :disabled="controlStatus.isHooked"
+                @click="handleControlAction('applyHook')"
+                style="width: 120px"
+              >
+                {{ i18n.systemControl.applyHook }}
+              </n-button>
+              <n-button 
+                type="primary"
+                :loading="restoreHookLoading || controlStatus.isChecking"
+                :disabled="!controlStatus.isHooked"
+                @click="handleControlAction('restoreHook')"
+                style="width: 120px"
+              >
+                {{ i18n.systemControl.restoreHook }}
+              </n-button>
+            </n-space>
           </n-space>
-        </n-space>
-
-        <!-- 更新控制部分 -->
-        <!-- <n-space justify="space-between" align="center">
-          <span>{{ i18n.systemControl.updateStatus }}: {{ controlStatus.updateDisabled ? i18n.systemControl.updateDisabled : i18n.systemControl.updateEnabled }}</span>
-          <n-space>
-            <n-button 
-              type="warning" 
-              :loading="disableUpdateLoading"
-              :disabled="controlStatus.updateDisabled"
-              @click="handleControlAction('disableUpdate')"
-              style="width: 120px"
-            >
-              {{ i18n.systemControl.disableUpdate }}
-            </n-button>
-            <n-button 
-              type="primary"
-              :loading="restoreUpdateLoading"
-              :disabled="!controlStatus.updateDisabled"
-              @click="handleControlAction('restoreUpdate')"
-              style="width: 120px"
-            >
-              {{ i18n.systemControl.restoreUpdate }}
-            </n-button>
-          </n-space>
-        </n-space> -->
-      </n-space>
-    </n-card>
-
-    <n-card :title="messages[currentLang].settings.activation">
-      <n-form
-        :model="formValue"
-        label-placement="left"
-        label-width="120"
-        require-mark-placement="right-hanging"
-      >
-        <n-form-item
-          :label="messages[currentLang].settings.activationCode"
-          path="activationCode"
-        >
-          <n-input-group style="width: 360px">
-            <n-input
-              v-model:value="formValue.activationCode"
-              :placeholder="messages[currentLang].settings.activationCode"
-              size="large"
-            />
-            <n-button
-              type="primary"
-              @click="handleActivate"
-              :loading="activateLoading"
-              size="large"
-            >
-              {{ messages[currentLang].settings.activate }}
-            </n-button>
-          </n-input-group>
-        </n-form-item>
-
-        <n-form-item>
-          <div style="padding-left: 40px">
-            <n-button
-              type="error"
-              @click="handleLogout"
-              size="large"
-            >
-              {{ i18n.common.logout }}
-            </n-button>
-          </div>
-        </n-form-item>
-      </n-form>
-    </n-card>
-
-    <n-card :title="messages[currentLang].settings.changePassword">
-      <n-form
-        :model="formValue"
-        label-placement="left"
-        label-width="100"
-        require-mark-placement="right-hanging"
-      >
-        <n-form-item :label="messages[currentLang].settings.currentPassword">
-          <n-input
-            v-model:value="formValue.currentPassword"
-            type="password"
-            show-password-on="click"
-            :placeholder="messages[currentLang].settings.currentPassword"
-            maxlength="20"
-            minlength="6"
-            :allow-input="(value) => /^[a-zA-Z0-9]*$/.test(value)"
-          />
-        </n-form-item>
-
-        <n-form-item :label="messages[currentLang].settings.newPassword">
-          <n-input
-            v-model:value="formValue.newPassword"
-            type="password"
-            show-password-on="click"
-            :placeholder="messages[currentLang].settings.newPassword"
-            maxlength="20"
-            minlength="6"
-            :allow-input="(value) => /^[a-zA-Z0-9]*$/.test(value)"
-          />
-        </n-form-item>
-
-        <n-form-item :label="messages[currentLang].settings.confirmPassword">
-          <n-input
-            v-model:value="formValue.confirmPassword"
-            type="password"
-            show-password-on="click"
-            :placeholder="messages[currentLang].settings.confirmPassword"
-            maxlength="20"
-            minlength="6"
-            :allow-input="(value) => /^[a-zA-Z0-9]*$/.test(value)"
-          />
-        </n-form-item>
-
-        <div style="margin-top: 24px">
-          <n-button 
-            type="primary" 
-            @click="handlePasswordChange"
-            :loading="passwordChangeLoading"
-          >
-            {{ messages[currentLang].settings.changePassword }}
-          </n-button>
         </div>
-      </n-form>
-    </n-card>
-
-    <n-card title="Language / 语言">
-      <n-space vertical>
-        <language-switch />
+        
+        <!-- 全局偏好设置 -->
+        <div class="section-divider"></div>
+        <div>
+          <div class="section-header">全局偏好设置</div>
+          <div class="preferences-list">
+            <!-- 线路选择 -->
+            <div class="preference-row">
+              <div class="preference-label">{{ i18n.inbound ? i18n.inbound.title : '线路' }}</div>
+              <div class="preference-control">
+                <inbound-selector :show-label="false" />
+              </div>
+            </div>
+            
+            <!-- 语言选择 -->
+            <div class="preference-row">
+              <div class="preference-label">语言</div>
+              <div class="preference-control">
+                <language-switch :show-label="false" />
+              </div>
+            </div>
+          </div>
+        </div>
       </n-space>
     </n-card>
 
+    <!-- 用户设置卡片 -->
+    <n-card :title="messages[currentLang].settings.activation">
+      <n-space vertical :size="16">
+        <!-- 激活码部分 -->
+        <div>
+          <n-form
+            :model="formValue"
+            label-placement="left"
+            label-width="120"
+            require-mark-placement="right-hanging"
+            class="activation-form"
+          >
+            <n-form-item
+              :label="messages[currentLang].settings.activationCode"
+              path="activationCode"
+            >
+              <n-input-group style="width: 360px">
+                <n-input
+                  v-model:value="formValue.activationCode"
+                  :placeholder="messages[currentLang].settings.activationCode"
+                  size="large"
+                />
+                <n-button
+                  type="primary"
+                  @click="handleActivate"
+                  :loading="activateLoading"
+                  size="large"
+                >
+                  {{ messages[currentLang].settings.activate }}
+                </n-button>
+              </n-input-group>
+            </n-form-item>
+          </n-form>
+        </div>
+
+        <!-- 密码修改部分 -->
+        <div class="section-divider"></div>
+        <div>
+          <div class="section-header">{{ messages[currentLang].settings.changePassword }}</div>
+          <n-form
+            :model="formValue"
+            label-placement="left"
+            label-width="100"
+            require-mark-placement="right-hanging"
+            class="password-form"
+          >
+            <n-form-item :label="messages[currentLang].settings.currentPassword">
+              <n-input
+                v-model:value="formValue.currentPassword"
+                type="password"
+                show-password-on="click"
+                :placeholder="messages[currentLang].settings.currentPassword"
+                maxlength="20"
+                minlength="6"
+                :allow-input="(value) => /^[a-zA-Z0-9]*$/.test(value)"
+              />
+            </n-form-item>
+
+            <n-form-item :label="messages[currentLang].settings.newPassword">
+              <n-input
+                v-model:value="formValue.newPassword"
+                type="password"
+                show-password-on="click"
+                :placeholder="messages[currentLang].settings.newPassword"
+                maxlength="20"
+                minlength="6"
+                :allow-input="(value) => /^[a-zA-Z0-9]*$/.test(value)"
+              />
+            </n-form-item>
+
+            <n-form-item :label="messages[currentLang].settings.confirmPassword">
+              <n-input
+                v-model:value="formValue.confirmPassword"
+                type="password"
+                show-password-on="click"
+                :placeholder="messages[currentLang].settings.confirmPassword"
+                maxlength="20"
+                minlength="6"
+                :allow-input="(value) => /^[a-zA-Z0-9]*$/.test(value)"
+              />
+            </n-form-item>
+
+            <div style="margin-top: 12px">
+              <n-space>
+                <n-button 
+                  type="primary" 
+                  @click="handleChangePassword"
+                  :loading="passwordChangeLoading"
+                >
+                  {{ messages[currentLang].settings.changePassword }}
+                </n-button>
+                <n-button
+                  type="error"
+                  @click="handleLogout"
+                >
+                  {{ i18n.common.logout }}
+                </n-button>
+              </n-space>
+            </div>
+          </n-form>
+        </div>
+      </n-space>
+    </n-card>
+
+    <!-- 关于信息卡片 -->
     <n-card :title="messages[currentLang].settings.about">
       <n-space vertical :size="12">
         <p>{{ i18n.about.appName }} v{{ version }}</p>
@@ -391,24 +429,113 @@ onMounted(async () => {
       </n-space>
     </n-card>
 
-    <!-- 合并后的 Cursor 运行提醒模态框 -->
-    <n-modal
+    <cursor-running-modal
       v-model:show="showControlRunningModal"
-      preset="dialog"
-      title="提示"
-      :closable="false"
-      :mask-closable="false"
-    >
-      <template #default>
-        {{ i18n.systemControl.messages.cursorRunning }}
-      </template>
-      <template #action>
-        <n-space justify="end">
-          <n-button type="warning" @click="handleControlForceKill">
-            {{ i18n.systemControl.messages.forceKillConfirm }}
-          </n-button>
-        </n-space>
-      </template>
-    </n-modal>
+      :title="i18n.common.cursorRunning"
+      :content="i18n.common.cursorRunningMessage"
+      :confirm-button-text="i18n.common.forceClose"
+      @confirm="handleControlForceKill"
+    />
+
+    <!-- 添加文件选择模态框组件 -->
+    <file-select-modal />
   </n-space>
 </template>
+
+<style scoped>
+.section-divider {
+  height: 1px;
+  background-color: var(--n-border-color);
+  margin: 12px 0;
+}
+
+.section-header {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--n-title-text-color);
+  margin-bottom: 12px;
+}
+
+.preferences-container {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.preference-group {
+  display: flex;
+  flex-direction: column;
+  width: 48%;
+}
+
+.preference-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.preference-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--n-text-color);
+  width: 80px;
+}
+
+.preference-control {
+  flex: 1;
+}
+
+@media (max-width: 600px) {
+  .preferences-container {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .preference-group {
+    width: 100%;
+  }
+}
+
+.hook-status-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.hook-status-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--n-text-color);
+  margin-right: 8px;
+}
+
+.hook-status-value {
+  flex: 1;
+}
+
+.hook-status-actions {
+  margin-left: auto;
+}
+
+/* 激活码表单样式 */
+.activation-form :deep(.n-form-item-label) {
+  text-align: left;
+}
+
+/* 确保标签文本左对齐 */
+.activation-form :deep(.n-form-item-label__text) {
+  text-align: left;
+  justify-content: flex-start;
+}
+
+/* 密码表单样式 */
+.password-form :deep(.n-form-item-label) {
+  text-align: left;
+}
+
+/* 确保标签文本左对齐 */
+.password-form :deep(.n-form-item-label__text) {
+  text-align: left;
+  justify-content: flex-start;
+}
+</style>

@@ -1,7 +1,9 @@
 pub mod client;
 pub mod endpoints;
-mod types;
+pub mod interceptor;
+pub mod types;
+pub mod inbound;
 
 pub use client::ApiClient;
 pub use endpoints::*;
-pub use types::*;
+pub use inbound::{InboundConfig, InboundItem};

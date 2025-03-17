@@ -1,10 +1,10 @@
 use tauri::{
-    App,
-    Manager,
-    AppHandle,
     // Emitter,
     menu::{Menu, MenuItem},
-    tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent}
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    App,
+    AppHandle,
+    Manager,
 };
 
 // use crate::cursor_reset::reset_machine_id;
@@ -23,26 +23,31 @@ pub fn setup_system_tray(app: &App) -> Result<(), Box<dyn std::error::Error>> {
     // let switch_account_item = MenuItem::with_id(app, "switch_account", "一键换号", true, None::<&str>)?;
     // let switch_account_manual = MenuItem::with_id(app, "switch_account_manual", "切换账号", true, None::<&str>)?;
     // let switch_machine = MenuItem::with_id(app, "switch_machine", "换机器码", true, None::<&str>)?;
-    
-    let menu = Menu::with_items(app, &[
-        // &switch_account_item,
-        // &switch_account_manual,
-        // &switch_machine,
-        &show,
-        &quit,
-    ])?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            // &switch_account_item,
+            // &switch_account_manual,
+            // &switch_machine,
+            &show, &quit,
+        ],
+    )?;
 
     let _tray = TrayIconBuilder::new()
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)
         .tooltip("Cursor Pool")
-        .on_tray_icon_event(|tray, event| if let TrayIconEvent::Click {
-            button: MouseButton::Left,
-            button_state: MouseButtonState::Up,
-            ..
-        } = event {
-            show_and_focus_window(tray.app_handle());
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_and_focus_window(tray.app_handle());
+            }
         })
         .on_menu_event(move |app, event| {
             match event.id.as_ref() {

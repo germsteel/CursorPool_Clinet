@@ -27,6 +27,10 @@
     "core:event:allow-listen",
     "os:default",
     "shell:default",
+    "positioner:default",
+    "dialog:default",
+    "process:default",
+    "updater:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [
@@ -46,7 +50,6 @@
           "args": true
         }
       ]
-    },
-    "positioner:default"
+    }
   ]
 }

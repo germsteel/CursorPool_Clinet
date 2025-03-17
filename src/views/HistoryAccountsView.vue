@@ -2,38 +2,44 @@
 import { ref, onMounted, h } from 'vue'
 import { useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
-import { NDataTable, NSpace, NButton, NCard, NModal } from 'naive-ui'
+import { NDataTable, NSpace, NButton, NCard, NProgress } from 'naive-ui'
 import type { HistoryAccount } from '@/types/history'
-import { getHistoryAccounts, removeHistoryAccount } from '@/utils/historyAccounts'
-import { getUsage, switchAccount, resetMachineId, checkCursorRunning, checkHookStatus, applyHook, closeCursor, launchCursor, getMachineIds } from '@/api'
 import type { PendingForceKillAction } from '@/types/dashboard'
+import { useHistoryStore } from '@/stores/history'
+import { useCursorStore } from '@/stores/cursor'
+import CursorRunningModal from '../components/CursorRunningModal.vue'
+import { useI18n } from '../locales'
 
 const message = useMessage()
-const loading = ref(false)
-const switchLoadingMap = ref<Record<string, boolean>>({})
-const deleteLoadingMap = ref<Record<string, boolean>>({})
-const accounts = ref<HistoryAccount[]>([])
+const historyStore = useHistoryStore()
+const cursorStore = useCursorStore()
+const { i18n } = useI18n()
 
-// 添加模态框相关状态
+// 模态框状态
 const showCursorRunningModal = ref(false)
 const pendingAccount = ref<HistoryAccount | null>(null)
 
-const autoApplyHook = async (): Promise<boolean> => {
-  try {
-    message.loading('正在自动注入...', { duration: 0 })
-    await applyHook(false)
-    message.destroyAll()
-    message.success('注入成功')
-    
-    const hookStatus = await checkHookStatus()
-    return hookStatus === true
-  } catch (error) {
-    console.error('自动注入失败:', error)
-    message.destroyAll()
-    message.error(error instanceof Error ? error.message : '注入失败，请手动注入后再试')
-    return false
+// 计算使用率
+const calculateUsagePercent = (count: number, maxUsage: number | null | undefined) => {
+  // 确保count是数字
+  if (typeof count === 'string') {
+    count = parseInt(count, 10) || 0;
   }
-}
+  
+  // 确保count为非负数
+  count = Math.max(0, count || 0);
+  
+  // 确保maxUsage是有效数字且不为0
+  if (maxUsage === undefined || maxUsage === null || maxUsage <= 0 || isNaN(Number(maxUsage))) {
+    maxUsage = count > 150 ? count : 150; // 默认值150与API返回的常见值一致
+  } else {
+    maxUsage = Number(maxUsage);
+  }
+  
+  // 计算百分比并取整
+  const percent = (count / maxUsage) * 100;
+  return Math.round(Math.min(percent, 100));
+};
 
 const columns: DataTableColumns<HistoryAccount> = [
   {
@@ -45,24 +51,25 @@ const columns: DataTableColumns<HistoryAccount> = [
     key: 'machineCode',
     render(row) {
       const code = row.machineCode
-      return code.slice(0, 4) + '...' + code.slice(-4)
+      return code.slice(0, 4) + '**' + code.slice(-4)
     }
   },
   {
-    title: '高级模型',
+    title: '高级模型使用量',
     key: 'gpt4Count',
-    width: 95
-  },
-  {
-    title: '基础模型',
-    key: 'gpt35Count',
-    width: 95
-  },
-  {
-    title: '最后使用时间',
-    key: 'lastUsed',
+    width: 150,
     render(row) {
-      return new Date(row.lastUsed).toLocaleString()
+      const percent = calculateUsagePercent(row.gpt4Count, row.gpt4MaxUsage);
+      const color = percent >= 90 ? 'error' : percent >= 70 ? 'warning' : 'success';
+      
+      return h(NProgress, { 
+        type: 'line', 
+        percentage: percent, 
+        status: color,
+        indicatorPlacement: 'inside',
+        height: 12,
+        showIndicator: false
+      });
     }
   },
   {
@@ -75,17 +82,17 @@ const columns: DataTableColumns<HistoryAccount> = [
             NButton,
             {
               size: 'small',
-              loading: switchLoadingMap.value[row.email] || false,
+              loading: historyStore.switchingAccount[row.email] || false,
               onClick: () => handleSwitch(row)
             },
-            { default: () => '切换到此账户' }
+            { default: () => '切换' }
           ),
           h(
             NButton,
             {
               size: 'small',
               type: 'error',
-              loading: deleteLoadingMap.value[row.email] || false,
+              loading: historyStore.deletingAccount[row.email] || false,
               onClick: () => handleRemove(row)
             },
             { default: () => '删除' }
@@ -96,197 +103,154 @@ const columns: DataTableColumns<HistoryAccount> = [
   }
 ]
 
-async function refreshUsage() {
-  loading.value = true
-  try {
-    const history = getHistoryAccounts()
-    for (const account of history) {
-      try {
-        const usage = await getUsage(account.token)
-        account.gpt4Count = usage['gpt-4']?.numRequests || 0
-        account.gpt35Count = usage['gpt-3.5-turbo']?.numRequests || 0
-        account.lastUsed = Date.now()
-      } catch (error) {
-        console.error(`获取账户 ${account.email} 使用情况失败:`, error)
-      }
-    }
-    accounts.value = history
-  } catch (error) {
-    message.error('刷新使用情况失败')
-  } finally {
-    loading.value = false
-  }
-}
-
 async function handleSwitch(account: HistoryAccount) {
   try {
-    switchLoadingMap.value[account.email] = true
+    const result = await cursorStore.switchToHistoryAccount(account);
     
-    // 获取当前账户信息并保存到历史记录
-    const currentAccount = await getMachineIds()
-    if (currentAccount.currentAccount && currentAccount.cursorToken) {
-      // 检查当前账户是否已在历史记录中
-      const existingAccount = accounts.value.find(a => a.email === currentAccount.currentAccount)
-      if (!existingAccount) {
-        // 获取当前账户的使用情况
-        try {
-          const usage = await getUsage(currentAccount.cursorToken)
-          const newHistoryAccount: HistoryAccount = {
-            email: currentAccount.currentAccount,
-            token: currentAccount.cursorToken,
-            machineCode: currentAccount.machineId,
-            gpt4Count: usage['gpt-4']?.numRequests || 0,
-            gpt35Count: usage['gpt-3.5-turbo']?.numRequests || 0,
-            lastUsed: Date.now()
-          }
-          // 保存到历史记录
-          accounts.value.unshift(newHistoryAccount)
-          // 更新本地存储
-          localStorage.setItem('history_accounts', JSON.stringify(accounts.value))
-        } catch (error) {
-          console.error('获取当前账户使用情况失败:', error)
-        }
-      }
+    if (result.status === 'running') {
+      pendingAccount.value = account;
+      showCursorRunningModal.value = true;
+      return;
     }
-
-    // 继续原有的切换逻辑
-    const isRunning = await checkCursorRunning()
-    if (isRunning) {
-      pendingAccount.value = account
-      showCursorRunningModal.value = true
-      return
+    
+    if (result.status === 'hook_failed') {
+      message.error('注入失败，请手动注入后再试');
+      return;
     }
-
-    const hookStatus = await checkHookStatus()
-    if (!hookStatus) {
-      const hookSuccess = await autoApplyHook()
-      if (!hookSuccess) {
-        return
-      }
+    
+    if (result.status === 'success') {
+      message.success('切换账户成功');
+      window.location.reload();
     }
-
-    await resetMachineId({ machineId: account.machineCode })
-    await switchAccount(account.email, account.token, false)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    message.success('切换账户成功')
-    window.location.reload()
   } catch (error) {
-    message.error('切换账户失败')
-  } finally {
-    switchLoadingMap.value[account.email] = false
+    message.error('切换账户失败');
+    console.error('切换账户失败:', error);
   }
 }
 
-function handleRemove(account: HistoryAccount) {
-  deleteLoadingMap.value[account.email] = true
-  removeHistoryAccount(account.email)
-  accounts.value = accounts.value.filter(a => a.email !== account.email)
-  message.success('删除成功')
-  deleteLoadingMap.value[account.email] = false
+async function handleRemove(account: HistoryAccount) {
+  try {
+    await historyStore.removeHistoryAccountItem(account.email);
+    message.success('删除成功');
+  } catch (error) {
+    message.error('删除失败');
+    console.error('删除账户失败:', error);
+  }
+}
+
+async function handleClearHighUsageAccounts() {
+  if (historyStore.highUsageAccounts.length === 0) {
+    message.info('没有高使用量账户需要清理');
+    return;
+  }
+  
+  try {
+    const result = await historyStore.clearHighUsageAccounts();
+    message.success(`成功清理 ${result.success} 个高使用量账户`);
+  } catch (error) {
+    message.error('清理高使用量账户失败');
+    console.error('清理高使用量账户失败:', error);
+  }
+}
+
+async function refreshUsage() {
+  try {
+    const result = await historyStore.refreshAccountsUsage();
+    
+    if (result.success === result.total) {
+      message.success('所有账户刷新成功');
+    } else {
+      message.warning(`成功刷新 ${result.success}/${result.total} 个账户`);
+    }
+  } catch (error) {
+    message.error('刷新使用情况失败');
+    console.error('刷新使用情况失败:', error);
+  }
 }
 
 const handleForceKill = async () => {
-  if (!pendingAccount.value) return
+  if (!pendingAccount.value) return;
   
   try {
-    showCursorRunningModal.value = false
-    const account = pendingAccount.value
-    switchLoadingMap.value[account.email] = true
+    showCursorRunningModal.value = false;
+    const account = pendingAccount.value;
     
-    message.loading('正在关闭 Cursor...', { duration: 0 })
-    await closeCursor()
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    message.destroyAll()
+    // 使用 store 中的方法
+    const result = await cursorStore.forceCloseAndSwitch(account);
     
-    // 检查是否需要注入
-    if (!(await checkHookStatus())) {
-      message.loading('正在注入...', { duration: 0 })
-      const hookSuccess = await autoApplyHook()
-      if (!hookSuccess) {
-        message.error('注入失败，请手动注入后再试')
-        return
-      }
-      message.destroyAll()
+    if (result.status === 'hook_failed') {
+      message.error('注入失败，请手动注入后再试');
+      return;
     }
     
-    // 执行账户切换
-    message.loading('正在切换账户...', { duration: 0 })
-    await resetMachineId({ machineId: account.machineCode })
-    await switchAccount(account.email, account.token, false)
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    message.destroyAll()
-    message.success('切换账户成功')
-    
-    // 直接启动Cursor
-    message.loading('正在启动 Cursor...', { duration: 0 })
-    try {
-      await launchCursor()
-      message.destroyAll()
-      message.success('Cursor 已启动')
-    } catch (launchError) {
-      message.destroyAll()
-      message.error('启动 Cursor 失败: ' + (launchError instanceof Error ? launchError.message : String(launchError)))
+    if (result.status === 'success') {
+      message.success('切换账户成功');
+      window.location.reload();
     }
-    
-    window.location.reload()
   } catch (error) {
-    message.destroyAll()
-    message.error('切换账户失败')
+    message.error('切换账户失败');
+    console.error('切换账户失败:', error);
   } finally {
-    switchLoadingMap.value[pendingAccount.value.email] = false
-    pendingAccount.value = null
+    pendingAccount.value = null;
   }
 }
 
-onMounted(() => {
-  accounts.value = getHistoryAccounts()
+onMounted(async () => {
+  try {
+    await historyStore.fetchHistoryAccounts(false);
+  } catch (error) {
+    console.error('加载历史账户失败:', error);
+    message.error('加载历史账户失败');
+  }
+  
   window.addEventListener('force_kill_cursor', async (e: Event) => {
-    const detail = (e as CustomEvent).detail as PendingForceKillAction
+    const detail = (e as CustomEvent).detail as PendingForceKillAction;
     if (detail.type === 'account') {
-      await handleForceKill()
+      await handleForceKill();
     }
-  })
-})
+  });
+});
 </script>
 
 <template>
-  <n-card title="历史账户">
-    <n-space vertical>
-      <n-space>
-        <n-button 
-          type="primary"
-          :loading="loading"
-          @click="refreshUsage"
-        >
-          刷新使用情况
-        </n-button>
-      </n-space>
-      
+  <n-space vertical :size="24">
+    <n-card title="历史账户">
+      <template #header-extra>
+        <n-space>
+          <n-button 
+            @click="refreshUsage" 
+            :loading="historyStore.loadingAccounts"
+            type="primary"
+          >
+            刷新所有账户
+          </n-button>
+          <n-button 
+            @click="handleClearHighUsageAccounts" 
+            :loading="historyStore.clearingHighUsage"
+            type="error"
+            :disabled="historyStore.highUsageAccounts.length === 0"
+          >
+            清理高使用量账户 ({{ historyStore.highUsageAccounts.length }})
+          </n-button>
+        </n-space>
+      </template>
       <n-data-table
         :columns="columns"
-        :data="accounts"
-        :loading="loading"
+        :data="historyStore.filteredHistoryAccounts"
+        :loading="historyStore.loadingAccounts"
+        :bordered="false"
+        :pagination="{
+          pageSize: 10
+        }"
       />
-    </n-space>
-  </n-card>
-
-  <!-- 修改 Cursor 运行提示模态框 -->
-  <n-modal
-    v-model:show="showCursorRunningModal"
-    preset="dialog"
-    title="Cursor 正在运行"
-    :closable="true"
-    :mask-closable="false"
-  >
-    <template #default>
-      检测到 Cursor 正在运行, 请保存尚未更改的项目再继续操作!
-    </template>
-    <template #action>
-      <n-space justify="end">
-        <n-button type="warning" @click="handleForceKill">
-          我已保存, 强制关闭
-        </n-button>
-      </n-space>
-    </template>
-  </n-modal>
+    </n-card>
+  </n-space>
+  
+  <cursor-running-modal
+      v-model:show="showCursorRunningModal"
+      :title="i18n.common.cursorRunning"
+      :content="i18n.common.cursorRunningMessage"
+      :confirm-button-text="i18n.common.forceClose"
+      @confirm="handleForceKill"
+    />
 </template> 

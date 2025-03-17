@@ -1,6 +1,6 @@
 [package]
 name = "cursor-pool"
-version = "0.1.0"
+version = "1.7.3"
 description = "Cursor Pool App"
 authors = ["Sanyela"]
 edition = "2021"
@@ -22,7 +22,7 @@ tauri-build = { version = "2.0.0-alpha.12", features = [] }
 tauri = { version = "2.0.0-alpha.18", features = [ "macos-private-api", "tray-icon", "image-png"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "multipart"] }
 tokio = { version = "1.0", features = ["full"] }
 rusqlite = { version = "0.30.0", features = ["bundled"] }
 uuid = { version = "1.6.1", features = ["v4"] }
@@ -41,6 +41,13 @@ chrono = "0.4"
 os_info = "3.7"
 sys-info = "0.9"
 tauri-plugin-positioner = { version = "2.0.0" }
+http = "0.2"
+tauri-plugin-dialog = "2"
+tauri-plugin-process = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "time"] }
+tracing-appender = "0.2"
+time = { version = "0.3", features = ["formatting", "macros"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [
@@ -48,6 +55,10 @@ windows = { version = "0.52", features = [
     "Win32_System_Threading",
     "Win32_UI_Shell"
 ] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

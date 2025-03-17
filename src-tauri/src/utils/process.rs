@@ -1,11 +1,9 @@
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
-use crate::utils::paths::AppPaths;
 
 const MAX_ATTEMPTS: i32 = 2;
 const RETRY_DELAY: Duration = Duration::from_secs(1);
-const CLEANUP_DELAY: Duration = Duration::from_secs(1);
 const CURSOR_POOL_NAME: &str = "cursor-pool";
 
 pub struct ProcessManager;
@@ -24,25 +22,11 @@ impl ProcessManager {
         }
     }
 
-    /// 终止所有Cursor进程并在清理后重启
-    pub fn kill_and_restart_cursor(&self) -> Result<(), String> {
-        // 先终止所有进程
-        self.kill_cursor_processes()?;
-
-        // 等待清理完成
-        thread::sleep(CLEANUP_DELAY);
-
-        // 获取路径并启动 Cursor
-        let paths = AppPaths::new()?;
-        paths.launch_cursor()?;
-
-        Ok(())
-    }
-
     /// 终止所有Cursor进程
     pub fn kill_cursor_processes(&self) -> Result<(), String> {
         for attempt in 1..=MAX_ATTEMPTS {
-            let processes = self.get_cursor_processes()
+            let processes = self
+                .get_cursor_processes()
                 .map_err(|e| format!("获取进程列表失败: {}", e))?;
 
             if processes.is_empty() {
@@ -77,30 +61,30 @@ impl ProcessManager {
     /// 检查是否有其他 Cursor Pool 实例在运行
     pub fn is_other_cursor_pool_running(&self) -> bool {
         if let Ok(processes) = self.get_cursor_pool_processes() {
-            processes.len() > 1  // 大于1说明有其他实例
+            processes.len() > 1 // 大于1说明有其他实例
         } else {
             false
         }
     }
-    
+
     /// 终止其他所有 Cursor Pool 实例
     pub fn kill_other_cursor_pool_processes(&self) -> Result<(), String> {
         let current_pid = std::process::id().to_string();
-        
+
         if let Ok(processes) = self.get_cursor_pool_processes() {
             for pid in processes {
                 // 跳过当前进程
                 if pid == current_pid {
                     continue;
                 }
-                
+
                 if let Err(e) = self.kill_process(&pid) {
                     eprintln!("终止进程 {} 失败: {}", pid, e);
                 }
                 thread::sleep(Duration::from_millis(200));
             }
         }
-        
+
         Ok(())
     }
 
@@ -126,10 +110,10 @@ impl ProcessManager {
     /// 解析 Cursor Pool 进程列表
     fn parse_cursor_pool_processes(&self, output: &str) -> Vec<String> {
         let mut processes = Vec::new();
-        
+
         for line in output.lines() {
             let lower_line = line.to_lowercase();
-            
+
             // 检查是否为 Cursor Pool 进程
             if lower_line.contains(CURSOR_POOL_NAME) {
                 if let Some(pid) = self.extract_pid(line) {
@@ -144,19 +128,20 @@ impl ProcessManager {
     /// 在Windows平台上，创建不显示窗口的命令
     fn create_hidden_command(&self, cmd: &str) -> Command {
         let mut command = Command::new(cmd);
-        
+
         #[cfg(target_os = "windows")]
         {
             use std::os::windows::process::CommandExt;
             const CREATE_NO_WINDOW: u32 = 0x08000000;
             command.creation_flags(CREATE_NO_WINDOW);
         }
-        
+
         // 重定向标准输入输出，进一步确保不显示窗口
-        command.stdin(Stdio::null())
-               .stdout(Stdio::piped())
-               .stderr(Stdio::null());
-               
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
         command
     }
 
@@ -182,10 +167,10 @@ impl ProcessManager {
     /// 解析进程列表输出
     fn parse_process_list(&self, output: &str) -> Vec<String> {
         let mut processes = Vec::new();
-        
+
         for line in output.lines() {
             let lower_line = line.to_lowercase();
-            
+
             // 跳过自身进程
             if lower_line.contains("cursor-pool") {
                 continue;
@@ -202,12 +187,7 @@ impl ProcessManager {
 
     /// 查找Cursor进程并返回PID
     fn find_cursor_process(&self, line: &str, lower_line: &str) -> Option<String> {
-        let patterns = [
-            "cursor.exe",
-            "cursor ",
-            "cursor",
-            "*cursor*",
-        ];
+        let patterns = ["cursor.exe", "cursor ", "cursor", "*cursor*"];
 
         for pattern in &patterns {
             if self.match_pattern(lower_line, &pattern.to_lowercase()) {
@@ -285,7 +265,7 @@ mod tests {
     #[test]
     fn test_process_manager() {
         let manager = ProcessManager::new();
-        
+
         // 测试检测Cursor进程
         println!("Cursor是否运行: {}", manager.is_cursor_running());
 
@@ -304,7 +284,7 @@ mod tests {
     #[test]
     fn test_pattern_matching() {
         let manager = ProcessManager::new();
-        
+
         assert!(manager.match_pattern("cursor", "cursor"));
         assert!(manager.match_pattern("cursor.exe", "*cursor*"));
         assert!(manager.match_pattern("cursor process", "*cursor*"));

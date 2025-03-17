@@ -1,103 +1,102 @@
 // 通用响应类型
 export interface ApiResponse<T> {
-  status: string
-  message: string
+  status: number
+  msg: string
   data?: T
+  code?: string
 }
 
 // 用户信息
 export interface UserInfo {
   totalCount: number
   usedCount: number
-  expireTime: number
+  expireTime: string  // 修改为字符串类型
   level: number
   isExpired: boolean
   username: string
-  email: string
-  credits: number
-  usage: {
-    'gpt-4': {
-      numRequests: number
-    }
-    'gpt-3.5-turbo': {
-      numRequests: number
-    }
-  }
+  code_level?: string
 }
 
 // 账户信息
 export interface AccountInfo {
-  email: string
+  id: number
+  account: string
+  password: string
   token: string
-  usedCount: number
-  totalLimit: number
+  usage_count: number
+  status: number
+  create_time: string
+  distributed_time: string
+  update_time: string
 }
 
-// 账户详细信息
-export interface AccountDetail {
-  email: string
-  userId: string
-  token: string
+// 账户池信息
+export interface AccountPoolInfo {
+  success: boolean
+  account_info: AccountInfo
+  activation_code: ActivationCode
+}
+
+// 激活码信息
+export interface ActivationCode {
+  id: number
+  code: string
+  type: number
+  name: string
+  level: number
+  duration: number
+  max_uses: number
+  used_count: number
+  status: number
+  notes: string
+  activated_at: string
+  expired_at: string
 }
 
 // 登录请求
 export interface LoginRequest {
-  username: string
+  account: string
   password: string
-  deviceId: string
-  smsCode?: string
+  spread: string
 }
 
 // 登录响应
 export interface LoginResponse {
-  apiKey?: string
+  token?: string
+  userInfo?: UserInfo
 }
 
 // 检查用户请求
 export interface CheckUserRequest {
-  username: string
-}
-
-// 检查用户响应
-export interface CheckUserResponse {
-  exists: boolean
-  needCode: boolean
+  email: string
 }
 
 // 发送验证码请求
 export interface SendCodeRequest {
-  username: string
-  isResetPassword?: boolean
+  email: string
+  type: string  // register或reset
 }
 
-// 发送验证码响应
-export interface SendCodeResponse {
-  expireIn: number
-}
-
-// 激活请求
-export interface ActivateRequest {
+// 注册请求
+export interface RegisterRequest {
+  email: string
   code: string
+  password: string
+  spread: string
 }
 
-// 激活响应
-export interface ActivateResponse {
-  expireTime: number
-  level: number
+// 重置密码请求
+export interface ResetPasswordRequest {
+  email: string
+  code: string
+  password: string
 }
 
 // 修改密码请求
-export interface ChangePasswordRequest {
-  oldPassword: string
-  newPassword: string
-}
-
-// 版本信息响应
-export interface VersionInfo {
-  version: string
-  forceUpdate: boolean
-  downloadUrl: string
-  changeLog: string
+export interface UpdatePasswordRequest {
+  old_password: string
+  new_password: string
+  confirm_password: string
 }
 
 // 公告信息响应
@@ -131,17 +130,22 @@ export interface GptModelUsage {
 // 使用情况响应
 export interface UsageInfo extends CursorUsageInfo {}
 
-// 用户信息响应（Cursor平台）
-export interface UserInfoResponse extends CursorUserInfo {}
-
 // Cursor 用户信息
 export interface CursorUserInfo {
   email: string
   email_verified: boolean
   name: string
   sub: string
-  updatedAt: string
+  updated_at: string
   picture: string | null
+}
+
+// Cursor 使用情况
+export interface CursorUsageInfo {
+  'gpt-4': CursorModelUsage
+  'gpt-3.5-turbo': CursorModelUsage
+  'gpt-4-32k': CursorModelUsage
+  startOfMonth: string
 }
 
 // Cursor 模型使用情况
@@ -153,25 +157,6 @@ export interface CursorModelUsage {
   maxTokenUsage: number | null
 }
 
-// Cursor 使用情况
-export interface CursorUsageInfo {
-  'gpt-4': CursorModelUsage
-  'gpt-3.5-turbo': CursorModelUsage
-  'gpt-4-32k': CursorModelUsage
-  startOfMonth: string
-}
-
-// 设备信息
-export interface DeviceInfo {
-  machineCode: string
-  currentAccount: string
-  userInfo: UserInfo | null
-  cursorInfo: {
-    userInfo: CursorUserInfo | null
-    usage: CursorUsageInfo | null
-  } | null
-}
-
 // 机器码信息
 export interface MachineInfo {
   machineId: string
@@ -180,45 +165,51 @@ export interface MachineInfo {
   machineCode: string
 }
 
-// 管理员权限检查响应
-export interface AdminPrivilegesInfo {
-  isAdmin: boolean
+// Bug报告请求
+export interface BugReportRequest {
+  severity: string
+  bugDescription: string
+  screenshotUrls?: string[]
+  cursorVersion?: string
 }
 
-// Cursor 更新状态
-export interface UpdateStatus {
-  isDisabled: boolean
+// 确保 CursorUserInfo 使用正确的属性名
+export interface CursorUserInfo {
+  email: string;
+  email_verified: boolean;
+  name: string;
+  sub: string;
+  updated_at: string; // 确保使用下划线命名
+  picture: string | null;
 }
 
-// Hook 状态信息
-export interface HookStatus {
-  isHooked: boolean
+// 历史记录条目
+export interface HistoryRecord {
+  id: number
+  type_name: string
+  detail: string
+  timestamp: string
+  operator: string
 }
 
-// Hook 操作响应
-export interface HookResponse {
-  success: boolean
-}
-
-// 重置密码请求
-export interface ResetPasswordRequest {
+// 历史账户记录
+export interface HistoryAccountRecord {
   email: string
-  smsCode: string
-  newPassword: string
+  token: string
+  machine_code: string
+  gpt4_count: number
+  gpt35_count: number
+  last_used: number
+  gpt4_max_usage?: number | null
+  gpt35_max_usage?: number | null
 }
 
-// 系统信息
-export interface SystemInfo {
-    isWindows: boolean;
+// 公告数据结构
+export interface Article {
+  id: number;
+  title: string;
+  content: string;
 }
 
-// 免责声明响应
-export interface DisclaimerResponse {
-  content: string
-}
-
-// 重置机器码请求
-export interface ResetMachineIdRequest {
-  forceKill: boolean
-  machineId?: string  // 可选参数
-}
+// 添加公告相关接口到现有ApiResponse类型
+export interface ApiArticleResponse extends ApiResponse<Article[]> {}

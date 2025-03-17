@@ -34,6 +34,7 @@ export const messages = {
       cursorUsage: 'Cursor 使用量',
       notLoggedIn: '未登录',
       unlimited: '无限制',
+      serverNotConnected: '未连接服务器',
       memberLevel: {
         1: '码农',
         2: '程序员',
@@ -51,12 +52,12 @@ export const messages = {
       confirmSwitch: '确认切换',
       cancelSwitch: '取消',
       ccStatus: '本地Curso状态',
-      registerTime: '本地 Cursor账户注册时间',
+      registerTime: '本地Cursor账户注册时间',
       email: '本地Cursor邮箱',
       cpUsage: 'Cursor Pool额度使用量',
       advancedModelUsage: '高级模型使用量',
       basicModelUsage: '普通模型使用量',
-      cannotGetUsage: '无法获取',
+      cannotGetUsage: '无法链接cursor服务器',
       cursorHistoryDownload: 'Cursor 历史版本下载'
     },
     login: {
@@ -69,6 +70,7 @@ export const messages = {
       loginButton: '登录',
       registerButton: '注册',
       forgotPassword: '忘记密码？',
+      resetPassword: '重置密码',
       emailError: '请输入有效的邮箱地址',
       passwordError: '请输入密码',
       loginSuccess: '登录成功',
@@ -125,25 +127,16 @@ export const messages = {
       hookNotApplied: '未注入或客户端不支持',
       applyHook: '注入客户端',
       restoreHook: '还原客户端',
-      updateStatus: '自动更新状态',
-      updateDisabled: '已禁用自动更新',
-      updateEnabled: '已启用自动更新',
-      disableUpdate: '禁用更新',
-      restoreUpdate: '恢复更新',
       clientStatus: '客户端状态',
       clientVerified: '已验证',
       clientUnverified: '未验证',
       messages: {
-        disableUpdateSuccess: '成功禁用自动更新',
-        restoreUpdateSuccess: '成功恢复自动更新',
         applyHookSuccess: '注入客户端成功',
         restoreHookSuccess: '恢复客户端成功',
         cursorRunning: 'Cursor进程正在运行, 请先关闭Cursor',
         forceKillConfirm: '我已保存, 强制关闭'
       },
       history: {
-        disableUpdate: '禁用自动更新',
-        restoreUpdate: '恢复自动更新',
         applyHook: '注入客户端',
         restoreHook: '恢复客户端'
       }
@@ -175,7 +168,16 @@ export const messages = {
       unverified: '未验证',
       success: '成功',
       failed: '失败',
-      loading: '加载中...'
+      loading: '加载中...',
+      confirmRestart: '确定重启'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'en-US': {
@@ -213,6 +215,7 @@ export const messages = {
       cursorUsage: 'Cursor Usage',
       notLoggedIn: 'Not Logged In',
       unlimited: 'Unlimited',
+      serverNotConnected: 'Server Not Connected',
       memberLevel: {
         1: 'Coder',
         2: 'Programmer',
@@ -248,6 +251,7 @@ export const messages = {
       loginButton: 'Login',
       registerButton: 'Register',
       forgotPassword: 'Forgot Password?',
+      resetPassword: 'Reset Password',
       emailError: 'Please enter a valid email address',
       passwordError: 'Please enter your password',
       loginSuccess: 'Login successful',
@@ -321,10 +325,10 @@ export const messages = {
         forceKillConfirm: 'I have saved, force close'
       },
       history: {
-        disableUpdate: 'Disable auto update',
-        restoreUpdate: 'Restore auto update',
-        applyHook: 'Apply hook',
-        restoreHook: 'Restore hook'
+        disableUpdate: 'Desactivar actualización automática',
+        restoreUpdate: 'Restaurar actualización automática',
+        applyHook: 'Aplicar hook',
+        restoreHook: 'Restaurar hook'
       }
     },
     about: {
@@ -354,7 +358,16 @@ export const messages = {
       unverified: 'Unverified',
       success: 'Success',
       failed: 'Failed',
-      loading: 'Loading...'
+      loading: 'Loading...',
+      confirmRestart: 'Restart Now'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'ja-JP': {
@@ -392,6 +405,7 @@ export const messages = {
       cursorUsage: 'Cursor 使用量',
       notLoggedIn: '未ログイン',
       unlimited: '無制限',
+      serverNotConnected: '未接続',
       memberLevel: {
         1: 'コーダー',
         2: 'プログラマー',
@@ -487,7 +501,7 @@ export const messages = {
       updateDisabled: '無効',
       updateEnabled: '有効',
       disableUpdate: '更新を無効にする',
-      restoreUpdate: '更新を復元する',
+      restoreUpdate: 'Restore Update',
       clientStatus: 'クライアント状態',
       clientVerified: '検証済み',
       clientUnverified: '未検証',
@@ -533,7 +547,16 @@ export const messages = {
       unverified: '未検証',
       success: '成功',
       failed: '失敗',
-      loading: '読み込み中...'
+      loading: '読み込み中...',
+      confirmRestart: '今すぐ再起動'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'fr-FR': {
@@ -571,6 +594,7 @@ export const messages = {
       cursorUsage: 'Utilisation du curseur',
       notLoggedIn: 'Non connecté',
       unlimited: 'Illimité',
+      serverNotConnected: 'Non connecté',
       memberLevel: {
         1: 'Codeur',
         2: 'Programmeur',
@@ -656,32 +680,32 @@ export const messages = {
       passwordChangeFailed: 'Échec de la modification du mot de passe'
     },
     systemControl: {
-      title: 'Contrôle du système',
-      hookStatus: 'État du Hook',
+      title: 'Contrôle système',
+      hookStatus: 'Statut du hook',
       hookApplied: 'Appliqué',
       hookNotApplied: 'Non appliqué',
-      applyHook: 'Appliquer le Hook',
-      restoreHook: 'Restaurer le Hook',
-      updateStatus: 'État de la mise à jour automatique',
+      applyHook: 'Appliquer le hook',
+      restoreHook: 'Restaurer le hook',
+      updateStatus: 'État de mise à jour',
       updateDisabled: 'Désactivé',
       updateEnabled: 'Activé',
       disableUpdate: 'Désactiver la mise à jour',
-      restoreUpdate: 'Restaurer la mise à jour',
+      restoreUpdate: 'Restaurar obnovení',
       clientStatus: 'État du client',
       clientVerified: 'Vérifié',
       clientUnverified: 'Non vérifié',
       messages: {
-        disableUpdateSuccess: 'Mise à jour automatique désactivée avec succès',
-        restoreUpdateSuccess: 'Mise à jour automatique restaurée avec succès',
-        applyHookSuccess: 'Hook appliqué avec succès',
-        restoreHookSuccess: 'Hook restauré avec succès',
-        cursorRunning: 'Cursor est en cours d\'exécution, veuillez sauvegarder votre travail avant de continuer !',
-        forceKillConfirm: 'J\'ai sauvegardé, forcer la fermeture'
+        disableUpdateSuccess: 'Auto update disabled successfully',
+        restoreUpdateSuccess: 'Auto update restored successfully',
+        applyHookSuccess: 'Hook aplicado con éxito',
+        restoreHookSuccess: 'Hook restaurado con éxito',
+        cursorRunning: 'Cursor en ejecución, por favor guarde su trabajo antes de continuar!',
+        forceKillConfirm: 'He guardado, forzar cierre'
       },
       history: {
-        disableUpdate: 'Désactiver la mise à jour automatique',
-        restoreUpdate: 'Restaurer la mise à jour automatique',
-        applyHook: 'Appliquer le hook',
+        disableUpdate: 'Desactivar actualización automática',
+        restoreUpdate: 'Restaurar actualización automática',
+        applyHook: 'Aplicar hook',
         restoreHook: 'Restaurar hook'
       }
     },
@@ -705,7 +729,16 @@ export const messages = {
       cursorRunning: 'Cursor en cours d\'exécution',
       cursorRunningMessage: 'Détecté que le Cursor est en cours d\'exécution, veuillez enregistrer le projet qui n\'a pas été modifié avant de continuer!',
       closingCursor: 'Fermeture du Cursor...',
-      forgotPassword: 'Mot de passe oublié?'
+      forgotPassword: 'Mot de passe oublié?',
+      confirmRestart: 'Redémarrer maintenant'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'de-DE': {
@@ -743,6 +776,7 @@ export const messages = {
       cursorUsage: 'Cursor-Nutzung',
       notLoggedIn: 'Nicht angemeldet',
       unlimited: 'Unbegrenzt',
+      serverNotConnected: 'Nicht verbunden',
       memberLevel: {
         1: 'Coder',
         2: 'Programmierer',
@@ -833,24 +867,24 @@ export const messages = {
       updateStatus: 'Automatischer Update-Status',
       updateDisabled: 'Deaktiviert',
       updateEnabled: 'Aktiviert',
-      disableUpdate: 'Update deaktivieren',
-      restoreUpdate: 'Update wiederherstellen',
+      disableUpdate: 'Disable Update',
+      restoreUpdate: 'Restore Update',
       clientStatus: 'Client-Status',
       clientVerified: 'Verifiziert',
       clientUnverified: 'Nicht verifiziert',
       messages: {
         disableUpdateSuccess: 'Automatische Updates erfolgreich deaktiviert',
         restoreUpdateSuccess: 'Automatische Updates erfolgreich wiederhergestellt',
-        applyHookSuccess: 'Hook erfolgreich angewendet',
-        restoreHookSuccess: 'Hook erfolgreich wiederhergestellt',
-        cursorRunning: 'Cursor läuft, bitte speichern Sie Ihre Arbeit vor dem Fortfahren!',
-        forceKillConfirm: 'Ich habe gespeichert, Zwangsbeenden'
+        applyHookSuccess: 'Hook aplicado con éxito',
+        restoreHookSuccess: 'Hook restaurado con éxito',
+        cursorRunning: 'Cursor en ejecución, por favor guarde su trabajo antes de continuar!',
+        forceKillConfirm: 'He guardado, forzar cierre'
       },
       history: {
-        disableUpdate: 'Automatische Updates deaktivieren',
-        restoreUpdate: 'Automatische Updates wiederherstellen',
-        applyHook: 'Hook anwenden',
-        restoreHook: 'Hook wiederherstellen'
+        disableUpdate: 'Desactivar actualización automática',
+        restoreUpdate: 'Restaurar actualización automática',
+        applyHook: 'Aplicar hook',
+        restoreHook: 'Restaurar hook'
       }
     },
     about: {
@@ -873,7 +907,16 @@ export const messages = {
       cursorRunning: 'Cursor läuft',
       cursorRunningMessage: 'Detected Cursor is running, please save the project that has not been changed before continuing!',
       closingCursor: 'Cursor schließen...',
-      forgotPassword: 'Passwort vergessen?'
+      forgotPassword: 'Mot de passe oublié?',
+      confirmRestart: 'Jetzt neu starten'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'ko-KR': {
@@ -911,6 +954,7 @@ export const messages = {
       cursorUsage: 'Cursor 사용량',
       notLoggedIn: '로그인하지 않음',
       unlimited: '무제한',
+      serverNotConnected: '서버 연결되지 않음',
       memberLevel: {
         1: '코더',
         2: '프로그래머',
@@ -1025,9 +1069,9 @@ export const messages = {
       title: '정보',
       version: '버전',
       appName: 'Cursor Pool',
-      copyright: '저작권 정보',
-      license: 'MIT 라이센스를 기반으로 오픈소스화되었습니다. 수정 또는 배포 시 저작권 표시를 유지해야 합니다.',
-      allRightsReserved: '전 저작권 보유',
+      copyright: 'Copyright',
+      license: 'Open-sourced under MIT License. Copyright notice must be preserved when modified or distributed.',
+      allRightsReserved: 'All Rights Reserved',      
     },
     language: {
       title: '언어 설정',
@@ -1041,7 +1085,16 @@ export const messages = {
       cursorRunning: 'Cursor 실행 중',
       cursorRunningMessage: '변경되지 않은 프로젝트를 저장한 후 계속하세요!',
       closingCursor: 'Cursor 닫는 중...',
-      forgotPassword: '비밀번호를 잊으셨나요?'
+      forgotPassword: '비밀번호를 잊으셨나요?',
+      confirmRestart: '지금 재시작'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'ru-RU': {
@@ -1079,6 +1132,7 @@ export const messages = {
       cursorUsage: 'Использование курсора',
       notLoggedIn: 'Не авторизован',
       unlimited: 'Неограниченный',
+      serverNotConnected: 'Не подключено',
       memberLevel: {
         1: 'Кодер',
         2: 'Программист',
@@ -1170,22 +1224,22 @@ export const messages = {
       updateDisabled: 'Отключено',
       updateEnabled: 'Включено',
       disableUpdate: 'Отключить обновление',
-      restoreUpdate: 'Восстановить обновление',
-      clientStatus: 'Статус клиента',
+      restoreUpdate: 'Restaurar обновление',
+      clientStatus: 'Этап клиента',
       clientVerified: 'Проверено',
       clientUnverified: 'Не проверено',
       messages: {
         disableUpdateSuccess: 'Автоматическое обновление успешно отключено',
         restoreUpdateSuccess: 'Автоматическое обновление успешно восстановлено',
-        applyHookSuccess: 'Hook успешно применен',
-        restoreHookSuccess: 'Hook успешно восстановлен',
-        cursorRunning: 'Cursor запущен, пожалуйста, сохраните работу перед продолжением!',
-        forceKillConfirm: 'Я сохранил, принудительно закрыть'
+        applyHookSuccess: 'Hook aplicado con éxito',
+        restoreHookSuccess: 'Hook restaurado con éxito',
+        cursorRunning: 'Cursor en ejecución, por favor guarde su trabajo antes de continuar!',
+        forceKillConfirm: 'He guardado, forzar cierre'
       },
       history: {
-        disableUpdate: 'Отключить автообновление',
-        restoreUpdate: 'Восстановить автообновление',
-        applyHook: 'Применить hook',
+        disableUpdate: 'Desactivar actualización automática',
+        restoreUpdate: 'Restaurar actualización automática',
+        applyHook: 'Aplicar hook',
         restoreHook: 'Restaurar hook'
       }
     },
@@ -1209,7 +1263,16 @@ export const messages = {
       cursorRunning: 'Cursor в работе',
       cursorRunningMessage: 'Detected Cursor is running, please save the project that has not been changed before continuing!',
       closingCursor: 'Закрытие Cursor...',
-      forgotPassword: 'Забыли пароль?'
+      forgotPassword: 'Забыли пароль?',
+      confirmRestart: 'Перезапустить сейчас'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   },
   'es-AR': {
@@ -1247,6 +1310,7 @@ export const messages = {
       cursorUsage: 'Uso del cursor',
       notLoggedIn: 'No conectado',
       unlimited: 'Ilimitado',
+      serverNotConnected: 'No conectado',
       memberLevel: {
         1: 'Código',
         2: 'Programador',
@@ -1377,7 +1441,16 @@ export const messages = {
       cursorRunning: 'Cursor en ejecución',
       cursorRunningMessage: 'Detected Cursor is running, please save the project that has not been changed before continuing!',
       closingCursor: 'Cerrando Cursor...',
-      forgotPassword: '¿Olvidó su contraseña?'
+      forgotPassword: 'Mot de passe oublié?',
+      confirmRestart: 'Reiniciar ahora'
+    },
+    inbound: {
+      title: '线路',
+      selector: '选择线路',
+      switchSuccess: '已切换到线路: {name}',
+      switchFailed: '切换线路失败',
+      restartNeeded: '为确保新线路配置生效，建议重启应用',
+      defaultInbound: '默认线路'
     }
   }
 } as const

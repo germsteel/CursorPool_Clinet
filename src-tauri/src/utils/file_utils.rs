@@ -1,6 +1,6 @@
 use std::fs;
-use std::path::Path;
 use std::io::Error;
+use std::path::Path;
 use std::process::Command;
 
 /// 检查文件是否是只读
@@ -84,4 +84,4 @@ pub fn safe_write(path: &Path, content: &str) -> Result<(), Error> {
     // set_read_only(path)?;
 
     Ok(())
-} 
+}
